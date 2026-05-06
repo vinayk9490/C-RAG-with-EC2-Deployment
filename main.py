@@ -150,6 +150,14 @@ workflow.add_edge("generate", END)
 
 from pprint import pprint
 from memory import get_postgres_checkpointer
+from cache import SemanticCache
+from qdrant_client import QdrantClient
+from langchain_huggingface import HuggingFaceEmbeddings
+
+# Initialise semantic cache (shared Qdrant collection)
+_qdrant     = QdrantClient(host="localhost", port=6333)
+_embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+semantic_cache = SemanticCache(_qdrant, _embeddings, threshold=0.92)
 
 with get_postgres_checkpointer() as checkpointer:
     app = workflow.compile(checkpointer=checkpointer)
@@ -176,13 +184,23 @@ with get_postgres_checkpointer() as checkpointer:
             print(f"{label}: {msg['content']}")
         print("------------------------------------\n")
 
-    inputs = {"question": question, "messages": []}
-    for output in app.stream(inputs, config=config):
-        for key, value in output.items():
-            pprint(f"Node '{key}':")
-        pprint("\n---\n")
+    # --- semantic cache check ---
+    cached_answer = semantic_cache.get(question)
+    if cached_answer:
+        print("\n[Cache HIT] Returning cached answer:")
+        print(cached_answer)
+    else:
+        inputs = {"question": question, "messages": []}
+        for output in app.stream(inputs, config=config):
+            for key, value in output.items():
+                pprint(f"Node '{key}':")
+            pprint("\n---\n")
 
-    print("\nAnswer:", value["generation"])
+        answer = value["generation"]
+        print("\nAnswer:", answer)
+
+        # Store in semantic cache for future similar questions
+        semantic_cache.set(question, answer)
 
     history = app.get_state(config).values.get("messages", [])
     print(f"\n[thread_id={thread_id}] Total messages stored in Postgres: {len(history)}")
