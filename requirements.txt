@@ -1,0 +1,10 @@
+langchain
+langchain-groq
+langchain-community
+sentence-transformers
+langchain_text_splitters
+qdrant-client
+langchain_huggingface
+pymupdf
+langgraph-checkpoint-postgres
+psycopg[binary]
